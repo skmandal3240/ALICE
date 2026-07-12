@@ -2,8 +2,8 @@
 //  ALICETests.swift
 //  ALICE
 //
-//  Unit tests for core logic: pointer tag parsing, permission state,
-//  model selection, and configuration.
+//  Unit tests for core logic: pointer tag parsing, model selection,
+//  configuration, and voice state.
 //
 
 import Testing
@@ -44,15 +44,11 @@ struct ALICETests {
         #expect(tag?.label == "First")
     }
 
-    // MARK: - Permission State
-
-    @Test func permissionRequestGoesToSystemPromptFirst() async throws {
-        // When permission is not granted and we haven't prompted, should prompt
-        // This tests the logic: notGranted + notPrompted → systemPrompt
-        let notGranted = false
-        let hasPrompted = false
-        // The PermissionManager handles this internally; we verify the logic path
-        #expect(!notGranted && !hasPrompted == false) // notGranted is false means granted
+    @Test func parseEmptyLabelReturnsNil() async throws {
+        // ponytail: empty label should not match — [^:]+ requires at least one char
+        let text = "[POINT:10,20::1]"
+        let tag = PointerTagParser.parse(from: text)
+        #expect(tag == nil)
     }
 
     // MARK: - AI Model
@@ -69,10 +65,30 @@ struct ALICETests {
         #expect(AIModel.gpt52.rawValue == "gpt-5.2-2025-12-11")
     }
 
+    @Test func modelCountIsThree() async throws {
+        #expect(AIModel.allCases.count == 3)
+    }
+
     // MARK: - Voice State
 
     @Test func voiceStateEquality() async throws {
         #expect(VoiceState.idle == VoiceState.idle)
         #expect(VoiceState.listening != VoiceState.thinking)
+    }
+
+    @Test func voiceStateHasFourCases() async throws {
+        // ponytail: ensure all states exist
+        let states: [VoiceState] = [.idle, .listening, .thinking, .speaking]
+        #expect(states.count == 4)
+    }
+
+    // MARK: - Pointer Tag Structure
+
+    @Test func pointerTagHasAllFields() async throws {
+        let tag = PointerTag(x: 100, y: 200, label: "Button", displayIndex: 1)
+        #expect(tag.x == 100)
+        #expect(tag.y == 200)
+        #expect(tag.label == "Button")
+        #expect(tag.displayIndex == 1)
     }
 }

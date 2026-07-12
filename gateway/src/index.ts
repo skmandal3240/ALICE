@@ -28,8 +28,7 @@ export default {
     const path = url.pathname;
     const method = request.method;
 
-    // CORS headers
-    const corsHeaders = {
+    const corsHeaders: Record<string, string> = {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
@@ -40,49 +39,36 @@ export default {
     }
 
     try {
-      // ── Chat ──────────────────────────────────────────────
       if (path === "/chat" && method === "POST") {
         return handleChat(request, env, corsHeaders);
       }
-
-      // ── TTS ───────────────────────────────────────────────
       if (path === "/tts" && method === "POST") {
         return handleTTS(request, env, corsHeaders);
       }
-
-      // ── Transcribe (OpenAI Whisper) ───────────────────────
       if (path === "/transcribe" && method === "POST") {
         const contentType = request.headers.get("Content-Type") || "";
         if (contentType.includes("multipart/form-data")) {
           return handleOpenAITranscribe(request, env, corsHeaders);
         } else {
-          // AssemblyAI submit
           return handleAssemblyAISubmit(request, env, corsHeaders);
         }
       }
-
-      // ── Transcribe Token (AssemblyAI upload URL) ──────────
       if (path === "/transcribe-token" && method === "POST") {
         return handleAssemblyAIToken(request, env, corsHeaders);
       }
-
-      // ── Transcribe Poll (AssemblyAI) ──────────────────────
       const transcribeMatch = path.match(/^\/transcribe\/([^/]+)$/);
       if (transcribeMatch && method === "GET") {
         return handleAssemblyAIPoll(transcribeMatch[1], env, corsHeaders);
       }
-
-      // ── Computer Use ──────────────────────────────────────
       if (path === "/computer-use" && method === "POST") {
         return handleComputerUse(request, env, corsHeaders);
       }
 
-      // ── 404 ───────────────────────────────────────────────
       return new Response(JSON.stringify({ error: "Not found" }), {
         status: 404,
         headers: { "Content-Type": "application/json", ...corsHeaders },
       });
-    } catch (err) {
+    } catch (err: any) {
       return new Response(JSON.stringify({ error: err.message }), {
         status: 500,
         headers: { "Content-Type": "application/json", ...corsHeaders },
@@ -100,20 +86,16 @@ async function handleChat(request: Request, env: Env, cors: Record<string, strin
   const model: string = body.model || "claude-sonnet-4-6";
   const stream: boolean = body.stream ?? false;
 
-  // ── Claude (Anthropic) ──────────────────────────────────
+  // ── Claude ──────────────────────────────────────────────
   if (model.startsWith("claude")) {
     const payload: any = {
       model,
       max_tokens: body.max_tokens || 1024,
       messages: body.messages,
     };
-
-    if (body.system) {
-      payload.system = body.system;
-    }
+    if (body.system) payload.system = body.system;
 
     if (stream) {
-      // Stream via SSE
       const upstream = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -124,13 +106,8 @@ async function handleChat(request: Request, env: Env, cors: Record<string, strin
         body: JSON.stringify({ ...payload, stream: true }),
       });
 
-      // Pass through SSE stream
       return new Response(upstream.body, {
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-          ...cors,
-        },
+        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", ...cors },
       });
     } else {
       const upstream = await fetch("https://api.anthropic.com/v1/messages", {
@@ -142,7 +119,6 @@ async function handleChat(request: Request, env: Env, cors: Record<string, strin
         },
         body: JSON.stringify(payload),
       });
-
       const data = await upstream.json();
       return new Response(JSON.stringify(data), {
         status: upstream.status,
@@ -153,13 +129,14 @@ async function handleChat(request: Request, env: Env, cors: Record<string, strin
 
   // ── OpenAI ──────────────────────────────────────────────
   if (model.startsWith("gpt")) {
-    // Convert Claude-style messages to OpenAI format
+    // Convert Claude content-block format → OpenAI image_url format
     const messages: any[] = [];
     if (body.system) {
       messages.push({ role: "system", content: body.system });
     }
+
     for (const msg of body.messages) {
-      messages.push(msg);
+      messages.push(claudeMessageToOpenAI(msg));
     }
 
     const payload = {
@@ -190,6 +167,34 @@ async function handleChat(request: Request, env: Env, cors: Record<string, strin
   });
 }
 
+/**
+ * Converts a Claude-style message (content as array of typed blocks)
+ * to OpenAI format (content as array with image_url instead of source).
+ */
+function claudeMessageToOpenAI(msg: any): any {
+  // If content is a string, pass through
+  if (typeof msg.content === "string") {
+    return msg;
+  }
+
+  // If content is an array, convert image blocks
+  if (Array.isArray(msg.content)) {
+    const converted = msg.content.map((block: any) => {
+      if (block.type === "image" && block.source) {
+        const dataUri = `data:${block.source.media_type};base64,${block.source.data}`;
+        return {
+          type: "image_url",
+          image_url: { url: dataUri },
+        };
+      }
+      return block;
+    });
+    return { role: msg.role, content: converted };
+  }
+
+  return msg;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // TTS Handler (ElevenLabs)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -218,10 +223,7 @@ async function handleTTS(request: Request, env: Env, cors: Record<string, string
 
   return new Response(upstream.body, {
     status: upstream.status,
-    headers: {
-      "Content-Type": "audio/mpeg",
-      ...cors,
-    },
+    headers: { "Content-Type": "audio/mpeg", ...cors },
   });
 }
 
@@ -239,9 +241,7 @@ async function handleOpenAITranscribe(request: Request, env: Env, cors: Record<s
 
   const upstream = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-    },
+    headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}` },
     body: upstreamFormData,
   });
 
@@ -259,11 +259,8 @@ async function handleOpenAITranscribe(request: Request, env: Env, cors: Record<s
 async function handleAssemblyAIToken(request: Request, env: Env, cors: Record<string, string>): Promise<Response> {
   const upstream = await fetch("https://api.assemblyai.com/v2/upload", {
     method: "POST",
-    headers: {
-      Authorization: env.ASSEMBLYAI_API_KEY,
-    },
+    headers: { Authorization: env.ASSEMBLYAI_API_KEY },
   });
-
   const data = await upstream.json();
   return new Response(JSON.stringify({ upload_url: data.upload_url }), {
     status: upstream.status,
@@ -273,18 +270,14 @@ async function handleAssemblyAIToken(request: Request, env: Env, cors: Record<st
 
 async function handleAssemblyAISubmit(request: Request, env: Env, cors: Record<string, string>): Promise<Response> {
   const body = await request.json() as any;
-
   const upstream = await fetch("https://api.assemblyai.com/v2/transcript", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: env.ASSEMBLYAI_API_KEY,
     },
-    body: JSON.stringify({
-      audio_url: body.audio_url,
-    }),
+    body: JSON.stringify({ audio_url: body.audio_url }),
   });
-
   const data = await upstream.json();
   return new Response(JSON.stringify(data), {
     status: upstream.status,
@@ -295,11 +288,8 @@ async function handleAssemblyAISubmit(request: Request, env: Env, cors: Record<s
 async function handleAssemblyAIPoll(id: string, env: Env, cors: Record<string, string>): Promise<Response> {
   const upstream = await fetch(`https://api.assemblyai.com/v2/transcript/${id}`, {
     method: "GET",
-    headers: {
-      Authorization: env.ASSEMBLYAI_API_KEY,
-    },
+    headers: { Authorization: env.ASSEMBLYAI_API_KEY },
   });
-
   const data = await upstream.json();
   return new Response(JSON.stringify(data), {
     status: upstream.status,
@@ -344,10 +334,7 @@ If the question is purely conceptual and there's no specific element to point to
               data: screenshot.data,
             },
           },
-          {
-            type: "text",
-            text: userPrompt,
-          },
+          { type: "text", text: userPrompt },
         ],
       },
     ],
@@ -366,7 +353,6 @@ If the question is purely conceptual and there's no specific element to point to
 
   const data = await upstream.json();
 
-  // Extract coordinate from tool_use block
   let coordinate: number[] | null = null;
   let label = "element";
   if (data.content) {
@@ -378,11 +364,7 @@ If the question is purely conceptual and there's no specific element to point to
     }
   }
 
-  return new Response(JSON.stringify({
-    coordinate,
-    label,
-    display: 1,
-  }), {
+  return new Response(JSON.stringify({ coordinate, label, display: 1 }), {
     status: upstream.status,
     headers: { "Content-Type": "application/json", ...cors },
   });

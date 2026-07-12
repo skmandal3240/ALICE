@@ -10,7 +10,7 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class OrbWindowManager {
+final class OrbWindowManager: ObservableObject {
     private var overlayPanel: NSPanel?
     private var hostingView: NSHostingView<OrbOverlayView>?
     private let core: ALICECore
@@ -21,7 +21,6 @@ final class OrbWindowManager {
     }
 
     private func setupOverlay() {
-        // One panel per screen, covering the full screen, transparent, non-activating
         guard let screen = NSScreen.main else { return }
         let frame = screen.frame
 
@@ -57,11 +56,12 @@ final class OrbWindowManager {
         overlayPanel?.orderOut()
     }
 
+    /// Animate the orb to a pointer tag location on screen.
     func animateToPoint(_ tag: PointerTag) async {
-        // ponytail: the SwiftUI view reads core state and handles the animation.
-        // The actual coordinate mapping and animation happen in OrbOverlayView.
-        // This method exists for the core to call; the view observes core.lastResponse
-        // and handles pointing tags via its own timer/animation.
+        // ponytail: the orb overlay reads core state for position.
+        // For pointing, we set a transient pointing target on core
+        // that the SwiftUI view animates to, then reverts.
+        core.setPointingTarget(tag)
     }
 }
 
@@ -71,9 +71,9 @@ struct OrbOverlayView: View {
     @ObservedObject var core: ALICECore
 
     @State private var orbPosition: CGPoint = CGPoint(x: 200, y: 200)
-    @State private var animatePulse = false
     @State private var displayTranscript = false
-    @State private var pointAnimationTarget: CGPoint?
+    @State private var pointingTarget: CGPoint?
+    @State private var isPointing = false
 
     var body: some View {
         ZStack {
@@ -102,28 +102,57 @@ struct OrbOverlayView: View {
                     )
                     .transition(.opacity)
             }
+
+            // Pointing indicator
+            if isPointing, let target = pointingTarget {
+                PointingIndicator(at: target)
+                    .transition(.scale.combined(with: .opacity))
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
         .animation(.easeInOut(duration: 0.3), value: core.voiceState)
+        .onChange(of: core.pointingTarget) { _, newTag in
+            if let tag = newTag {
+                handlePointing(tag)
+            }
+        }
     }
 
     private func startPositionTracking() {
-        // ponytail: orb follows the cursor with a spring delay
-        // This creates the "companion next to cursor" effect
         Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
             Task { @MainActor in
+                guard !isPointing else { return } // ponytail: don't move orb while pointing
                 let mouse = NSEvent.mouseLocation
                 let screenFrame = NSScreen.main?.frame ?? .zero
-                // Convert from bottom-left origin to SwiftUI coordinate space
                 let swiftUIY = screenFrame.height - mouse.y
                 let targetX = mouse.x + 60
                 let targetY = swiftUIY
-
-                // Smooth follow
                 orbPosition.x += (targetX - orbPosition.x) * 0.1
                 orbPosition.y += (targetY - orbPosition.y) * 0.1
             }
+        }
+    }
+
+    private func handlePointing(_ tag: PointerTag) {
+        // ponytail: map tag coordinates to screen space and animate
+        let screenFrame = NSScreen.main?.frame ?? .zero
+        // tag.x is in display points from left, tag.y is from bottom (AppKit origin)
+        let swiftUIY = screenFrame.height - tag.y
+        pointingTarget = CGPoint(x: tag.x, y: swiftUIY)
+        isPointing = true
+
+        // Move orb to the target too
+        withAnimation(.easeInOut(duration: 0.4)) {
+            orbPosition = CGPoint(x: tag.x + DS.orbSize, y: swiftUIY)
+        }
+
+        // Reset after 3 seconds
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            isPointing = false
+            pointingTarget = nil
+            core.clearPointingTarget()
         }
     }
 }
@@ -149,20 +178,17 @@ struct OrbShape: View {
 
     var body: some View {
         ZStack {
-            // Glow
             Circle()
                 .fill(color.opacity(0.15))
                 .frame(width: DS.orbSize + DS.orbGlowRadius * 2, height: DS.orbSize + DS.orbGlowRadius * 2)
                 .blur(radius: DS.orbGlowRadius)
 
-            // Core orb
             Circle()
                 .fill(color)
                 .frame(width: DS.orbSize, height: DS.orbSize)
                 .scaleEffect(scale)
                 .shadow(color: color.opacity(0.6), radius: 10)
 
-            // Inner highlight
             Circle()
                 .fill(Color.white.opacity(0.2))
                 .frame(width: DS.orbSize * 0.4, height: DS.orbSize * 0.4)
@@ -214,5 +240,38 @@ struct TranscriptBubble: View {
                     .fill(DS.panelBg.opacity(0.8))
             )
             .frame(maxWidth: 200)
+    }
+}
+
+// MARK: - Pointing Indicator
+
+struct PointingIndicator: View {
+    let at: CGPoint
+
+    @State private var pulse = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(DS.orbIdle.opacity(0.2))
+                .frame(width: 40, height: 40)
+                .scaleEffect(pulse ? 1.5 : 1.0)
+                .opacity(pulse ? 0 : 0.6)
+
+            Circle()
+                .stroke(DS.orbIdle, lineWidth: 2)
+                .frame(width: 20, height: 20)
+
+            // Arrow/pointer
+            Image(systemName: "hand.point.right.fill")
+                .font(.system(size: 16))
+                .foregroundColor(DS.orbIdle)
+        }
+        .position(at)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
+        }
     }
 }

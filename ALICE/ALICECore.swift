@@ -21,6 +21,7 @@ final class ALICECore: ObservableObject {
     @Published private(set) var isOrbVisible = true
     @Published private(set) var audioLevel: Float = 0
     @Published private(set) var permissionsGranted = false
+    @Published var pointingTarget: PointerTag?
 
     // MARK: - Subsystems
 
@@ -146,6 +147,16 @@ final class ALICECore: ObservableObject {
 
     func selectModel(_ model: AIModel) {
         selectedModel = model
+    }
+
+    // MARK: - Pointing
+
+    func setPointingTarget(_ tag: PointerTag) {
+        pointingTarget = tag
+    }
+
+    func clearPointingTarget() {
+        pointingTarget = nil
     }
 }
 

@@ -19,14 +19,26 @@ final class AppleSpeechTranscriptionProvider: TranscriptionProvider {
         let request = SFSpeechURLRecognitionRequest(url: audioFileURL)
         request.shouldReportPartialResults = false
 
+        // ponytail: use continuation safely — guard against double-resume
         return try await withCheckedThrowingContinuation { continuation in
+            var hasResumed = false
+            let lock = NSLock()
+
+            func resumeOnce(_ result: Result<String, Error>) {
+                lock.lock()
+                defer { lock.unlock() }
+                guard !hasResumed else { return }
+                hasResumed = true
+                continuation.resume(with: result)
+            }
+
             recognizer.recognitionTask(with: request) { result, error in
                 if let error = error {
-                    continuation.resume(throwing: error)
+                    resumeOnce(.failure(error))
                     return
                 }
                 if let result = result, result.isFinal {
-                    continuation.resume(returning: result.bestTranscription.formattedString)
+                    resumeOnce(.success(result.bestTranscription.formattedString))
                 }
             }
         }

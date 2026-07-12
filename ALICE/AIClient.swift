@@ -4,7 +4,6 @@
 //
 //  Unified AI client supporting Claude and OpenAI through the gateway proxy.
 //  SSE streaming for Claude, standard request/response for OpenAI.
-//  Includes conversation history and TLS warmup.
 //
 
 import Foundation
@@ -32,7 +31,6 @@ final class AIClient {
         warmUpTLS()
     }
 
-    /// Sends a vision request with a screenshot and user transcript.
     func sendVisionRequest(
         transcript: String,
         screenshotData: Data,
@@ -48,6 +46,7 @@ final class AIClient {
         let chatURL = gatewayURL.appendingPathComponent("chat")
         let mediaType = detectMediaType(data: screenshotData)
         let base64Image = screenshotData.base64EncodedString()
+        let isClaude = model.rawValue.hasPrefix("claude")
 
         let systemPrompt = """
         You are ALICE, an AI companion that lives on the user's macOS desktop. You can see their screen and help them with any task.
@@ -60,15 +59,15 @@ final class AIClient {
         Be concise and helpful. If the user asks a conceptual question with no UI element to point to, just answer normally.
         """
 
-        // Build messages with conversation history
         var messages: [[String: Any]] = []
-
-        for (userMsg, assistantMsg) in history.suffix(10) { // ponytail: last 10 turns
+        for (userMsg, assistantMsg) in history.suffix(10) {
             messages.append(["role": "user", "content": userMsg])
             messages.append(["role": "assistant", "content": assistantMsg])
         }
 
-        // Current message with image
+        // ponytail: Claude uses content blocks with "source", OpenAI uses "image_url" with data URI.
+        // The gateway receives a unified format and translates. We send Claude format since
+        // the gateway already handles both — it checks model prefix to decide translation.
         let currentMessage: [String: Any] = [
             "role": "user",
             "content": [
@@ -92,7 +91,7 @@ final class AIClient {
             "model": model.rawValue,
             "max_tokens": 1024,
             "system": systemPrompt,
-            "stream": model.rawValue.hasPrefix("claude"), // Stream Claude, not OpenAI
+            "stream": isClaude,
             "messages": messages
         ]
 
@@ -101,12 +100,10 @@ final class AIClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        if model.rawValue.hasPrefix("claude") {
-            // SSE streaming
+        if isClaude {
             let text = try await streamSSE(request: request)
             return AIResponse(text: text, duration: Date().timeIntervalSince(startTime), model: model.rawValue)
         } else {
-            // Standard request
             let (data, response) = try await session.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse,
                   (200...299).contains(httpResponse.statusCode) else {
@@ -133,7 +130,7 @@ final class AIClient {
 
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
-            throw AIClientError.apiError("Stream failed")
+            throw AIClientError.apiError("Stream failed: HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)")
         }
 
         var fullText = ""
@@ -143,7 +140,7 @@ final class AIClient {
                 if jsonStr == "[DONE]" { break }
                 if let data = jsonStr.data(using: .utf8),
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    // Claude format: content_block_delta
+                    // Claude format: content_block_delta → delta.text
                     if let delta = json["delta"] as? [String: Any],
                        let text = delta["text"] as? String {
                         fullText += text

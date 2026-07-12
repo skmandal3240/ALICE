@@ -12,6 +12,7 @@ import SwiftUI
 final class MenuBarController {
     private var statusItem: NSStatusItem?
     private var panel: NSPanel?
+    private var eventMonitor: Any?
     private let core: ALICECore
 
     init(core: ALICECore) {
@@ -22,7 +23,6 @@ final class MenuBarController {
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
-        // ponytail: use SF Symbol for the menu bar icon
         if let button = item.button {
             let image = NSImage(
                 systemSymbolName: "circle.fill",
@@ -47,10 +47,11 @@ final class MenuBarController {
 
     private func showPanel() {
         guard let button = statusItem?.button else { return }
+        hidePanel() // ponytail: ensure no duplicate panels
 
-        let panelView = OrbPanelView(core: core) {
+        let panelView = OrbPanelView(core: core, onQuit: {
             NSApp.terminate(nil)
-        }
+        })
         let hostingController = NSHostingController(rootView: panelView)
 
         let panel = NSPanel(
@@ -70,7 +71,6 @@ final class MenuBarController {
         panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-        // Position below the status item
         if let screen = button.window?.screen {
             let buttonFrame = button.window?.frame ?? .zero
             let panelSize = NSSize(width: 300, height: 400)
@@ -78,7 +78,6 @@ final class MenuBarController {
                 x: buttonFrame.midX - panelSize.width / 2,
                 y: buttonFrame.minY - panelSize.height - 8
             )
-            // Clamp to screen
             origin.x = max(screen.visibleFrame.minX, min(origin.x, screen.visibleFrame.maxX - panelSize.width))
             origin.y = max(screen.visibleFrame.minY, origin.y)
             panel.setFrame(NSRect(origin: origin, size: panelSize), display: true)
@@ -87,8 +86,8 @@ final class MenuBarController {
         self.panel = panel
         panel.orderFrontRegardless()
 
-        // Click outside to dismiss
-        NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+        // ponytail: install click-outside monitor, clean up on dismiss
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             if let panel = self?.panel, panel.isVisible {
                 if !panel.contains(event.locationInWindow) {
                     self?.hidePanel()
@@ -101,5 +100,15 @@ final class MenuBarController {
     private func hidePanel() {
         panel?.orderOut(nil)
         panel = nil
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
+        }
+    }
+
+    deinit {
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
     }
 }

@@ -41,8 +41,6 @@ final class VoicePipeline {
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
 
-        // ponytail: buffer to temp file for upload-based providers,
-        // stream live for streaming providers. Both paths share the same engine.
         let tempDir = FileManager.default.temporaryDirectory
         tempFileURL = tempDir.appendingPathComponent("alice-\(UUID().uuidString).wav")
         recordingFile = try AVAudioFile(
@@ -52,8 +50,11 @@ final class VoicePipeline {
 
         inputNode.removeTap(onBus: 0)
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
-            try? self?.recordingFile?.write(from: buffer)
-            self?.processAudioLevel(buffer: buffer)
+            // ponytail: audio tap runs on a background thread; write to file
+            // and compute level without touching main-actor state directly
+            guard let self else { return }
+            try? self.recordingFile?.write(from: buffer)
+            self.computeAudioLevel(buffer: buffer)
         }
 
         try audioEngine.start()
@@ -67,7 +68,6 @@ final class VoicePipeline {
         recordingFile = nil
 
         guard let fileURL = tempFileURL, let provider = provider else {
-            voiceState = .idle
             return
         }
 
@@ -93,20 +93,24 @@ final class VoicePipeline {
     private func startLevelMonitor() {
         levelTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.delegate?.voicePipeline(self!, didUpdateAudioLevel: self?.lastLevel ?? 0)
+                guard let self else { return }
+                self.delegate?.voicePipeline(self, didUpdateAudioLevel: self.lastLevel)
             }
         }
     }
 
-    nonisolated private func processAudioLevel(buffer: AVAudioPCMBuffer) {
+    // ponytail: nonisolated — called from audio tap callback on background thread.
+    // Only touches lastLevel via a Task to hop back to MainActor.
+    nonisolated private func computeAudioLevel(buffer: AVAudioPCMBuffer) {
         guard let channelData = buffer.floatChannelData?[0] else { return }
         let frameLength = Int(buffer.frameLength)
+        guard frameLength > 0 else { return }
         var sum: Float = 0
         for i in 0..<frameLength {
             sum += channelData[i] * channelData[i]
         }
         let rms = sqrt(sum / Float(frameLength))
-        let level = min(1.0, rms * 5.0) // ponytail: arbitrary gain factor
+        let level = min(1.0, rms * 5.0)
 
         Task { @MainActor in
             self.lastLevel = level

@@ -16,7 +16,7 @@ enum ShortcutTransition {
     case released
 }
 
-final class GlobalShortcutMonitor {
+final class GlobalShortcutMonitor: ObservableObject {
     let shortcutTransitionPublisher = PassthroughSubject<ShortcutTransition, Never>()
 
     private var eventTap: CFMachPort?

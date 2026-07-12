@@ -21,11 +21,10 @@ struct ALICEApp: App {
 
 final class ALICEAppDelegate: NSObject, NSApplicationDelegate {
     private var orbManager: OrbWindowManager!
+    private var menuBarController: MenuBarController!
     private var core: ALICECore!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // ponytail: no main window — LSUIElement=true handles this in Info.plist
-        // but we also hide any window that might appear
         NSApp.windows.forEach { $0.close() }
 
         ALICEAnalytics.configure()
@@ -35,6 +34,9 @@ final class ALICEAppDelegate: NSObject, NSApplicationDelegate {
         orbManager = OrbWindowManager(core: core)
         core.bind(orbManager: orbManager)
         core.start()
+
+        // ponytail: menu bar controller created after core so it can observe core state
+        menuBarController = MenuBarController(core: core)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

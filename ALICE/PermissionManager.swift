@@ -3,7 +3,6 @@
 //  ALICE
 //
 //  Manages macOS permission state: Accessibility, Screen Recording, Microphone.
-//  Provides a clean API to check, request, and monitor all three.
 //
 
 import AppKit
@@ -38,18 +37,16 @@ final class PermissionManager: ObservableObject {
 
     func checkAll() {
         hasAccessibility = AXIsProcessTrusted()
-        hasScreenRecording = CGPreflightScreenCaptureAccess()
-        if hasScreenRecording {
+
+        let screenGranted = CGPreflightScreenCaptureAccess()
+        if screenGranted {
             UserDefaults.standard.set(true, forKey: screenRecordingKey)
         }
-        // ponytail: if CGPreflight says no but we previously confirmed, trust the cache
-        // CGPreflight can return false-negative after restart before first capture
-        if !hasScreenRecording && UserDefaults.standard.bool(forKey: screenRecordingKey) {
-            hasScreenRecording = true
-        }
+        // ponytail: CGPreflight can false-negative after restart; trust cache
+        hasScreenRecording = screenGranted || UserDefaults.standard.bool(forKey: screenRecordingKey)
 
-        let micStatus = AVAudioApplication.requestRecordPermissionPermission()
-        hasMicrophone = (micStatus == .granted)
+        // ponytail: AVAudioApplication.recordPermission is the correct API (macOS 14+)
+        hasMicrophone = AVAudioApplication.shared.recordPermission == .granted
     }
 
     func requestAccessibility() {
@@ -74,8 +71,12 @@ final class PermissionManager: ObservableObject {
     }
 
     func requestMicrophone() {
-        // ponytail: AVAudioApplication handles the prompt on first use
-        // The voice pipeline will trigger this naturally
+        // ponytail: AVAudioApplication.requestRecordPermission triggers the system prompt
+        // on first call. The voice pipeline triggers this naturally on first capture.
+        // No manual request needed here — just open settings if already denied.
+        if !hasMicrophone {
+            openSettings(pane: "Privacy_Microphone")
+        }
     }
 
     func revealAppInFinder() {

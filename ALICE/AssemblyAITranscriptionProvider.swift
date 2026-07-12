@@ -69,7 +69,9 @@ final class AssemblyAITranscriptionProvider: TranscriptionProvider {
     }
 
     private func pollForTranscript(id: String) async throws -> String {
-        let pollURL = gatewayURL.appendingPathComponent("transcribe/\(id)")
+        // ponytail: appendingPathComponent doesn't handle path components with slashes
+        // Use appending(path:) which is available on macOS 14+
+        let pollURL = gatewayURL.appending(path: "transcribe/\(id)")
         for _ in 0..<60 { // ponytail: max 60 polls × 2s = 2 min timeout
             try await Task.sleep(nanoseconds: 2_000_000_000)
             var request = URLRequest(url: pollURL)

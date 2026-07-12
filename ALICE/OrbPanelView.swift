@@ -10,8 +10,14 @@ import SwiftUI
 
 struct OrbPanelView: View {
     @ObservedObject var core: ALICECore
-    @ObservedObject var permissions = PermissionManager()
+    @ObservedObject private var permissions: PermissionManager
     var onQuit: () -> Void = {}
+
+    init(core: ALICECore, onQuit: @escaping () -> Void = {}) {
+        self.core = core
+        self._permissions = ObservedObject(wrappedValue: core.permissionManager)
+        self.onQuit = onQuit
+    }
 
     var body: some View {
         VStack(spacing: 0) {
