@@ -119,7 +119,7 @@ async function handleChat(request: Request, env: Env, cors: Record<string, strin
         },
         body: JSON.stringify(payload),
       });
-      const data = await upstream.json();
+      const data = await upstream.json() as any;
       return new Response(JSON.stringify(data), {
         status: upstream.status,
         headers: { "Content-Type": "application/json", ...cors },
@@ -154,7 +154,7 @@ async function handleChat(request: Request, env: Env, cors: Record<string, strin
       body: JSON.stringify(payload),
     });
 
-    const data = await upstream.json();
+    const data = await upstream.json() as any;
     return new Response(JSON.stringify(data), {
       status: upstream.status,
       headers: { "Content-Type": "application/json", ...cors },
@@ -233,7 +233,7 @@ async function handleTTS(request: Request, env: Env, cors: Record<string, string
 
 async function handleOpenAITranscribe(request: Request, env: Env, cors: Record<string, string>): Promise<Response> {
   const formData = await request.formData();
-  const audioFile = formData.get("audio") as File;
+  const audioFile = formData.get("audio") as unknown as File;
 
   const upstreamFormData = new FormData();
   upstreamFormData.append("file", audioFile, "audio.wav");
@@ -245,7 +245,7 @@ async function handleOpenAITranscribe(request: Request, env: Env, cors: Record<s
     body: upstreamFormData,
   });
 
-  const data = await upstream.json();
+  const data = await upstream.json() as any;
   return new Response(JSON.stringify(data), {
     status: upstream.status,
     headers: { "Content-Type": "application/json", ...cors },
@@ -261,7 +261,7 @@ async function handleAssemblyAIToken(request: Request, env: Env, cors: Record<st
     method: "POST",
     headers: { Authorization: env.ASSEMBLYAI_API_KEY },
   });
-  const data = await upstream.json();
+  const data = await upstream.json() as any;
   return new Response(JSON.stringify({ upload_url: data.upload_url }), {
     status: upstream.status,
     headers: { "Content-Type": "application/json", ...cors },
@@ -278,7 +278,7 @@ async function handleAssemblyAISubmit(request: Request, env: Env, cors: Record<s
     },
     body: JSON.stringify({ audio_url: body.audio_url }),
   });
-  const data = await upstream.json();
+  const data = await upstream.json() as any;
   return new Response(JSON.stringify(data), {
     status: upstream.status,
     headers: { "Content-Type": "application/json", ...cors },
@@ -290,7 +290,7 @@ async function handleAssemblyAIPoll(id: string, env: Env, cors: Record<string, s
     method: "GET",
     headers: { Authorization: env.ASSEMBLYAI_API_KEY },
   });
-  const data = await upstream.json();
+  const data = await upstream.json() as any;
   return new Response(JSON.stringify(data), {
     status: upstream.status,
     headers: { "Content-Type": "application/json", ...cors },
@@ -351,7 +351,7 @@ If the question is purely conceptual and there's no specific element to point to
     body: JSON.stringify(payload),
   });
 
-  const data = await upstream.json();
+  const data = await upstream.json() as any;
 
   let coordinate: number[] | null = null;
   let label = "element";

@@ -9,13 +9,13 @@
 import AppKit
 import Foundation
 
-struct PointerTarget {
-    let point: CGPoint          // Display-local coordinates (bottom-left origin)
+struct PointerTarget: Equatable {
+    let point: CGPoint
     let label: String
     let displayIndex: Int
 }
 
-struct PointerTag {
+struct PointerTag: Equatable {
     let x: CGFloat
     let y: CGFloat
     let label: String
@@ -72,7 +72,7 @@ class PointerDetector {
     ) async -> PointerTarget? {
         // Pick closest aspect ratio resolution
         let displayRatio = Double(displayWidth) / Double(max(1, displayHeight))
-        let best = Self.resolutions.min(by: { abs(abs($0.ratio) - displayRatio) < abs(abs($1.ratio) - displayRatio) }) ?? (1280, 800, 1.6)
+        let best = Self.resolutions.min(by: { abs($0.ratio - displayRatio) < abs($1.ratio - displayRatio) }) ?? (1280, 800, 1.6)
 
         guard let resized = resize(data: screenshotData, to: best.w, height: best.h) else { return nil }
 
