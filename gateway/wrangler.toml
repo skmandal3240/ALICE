@@ -1,0 +1,13 @@
+name = "alice-gateway"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+# Secrets (set via `wrangler secret put`):
+#   ANTHROPIC_API_KEY
+#   OPENAI_API_KEY
+#   ASSEMBLYAI_API_KEY
+#   ELEVENLABS_API_KEY
+#   ELEVENLABS_VOICE_ID
+
+[vars]
+ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"

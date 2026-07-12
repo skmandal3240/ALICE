@@ -1,0 +1,35 @@
+# Cloudflare Worker
+gateway/node_modules/
+gateway/.dev.vars
+gateway/.wrangler/
+
+# macOS
+.DS_Store
+
+# Xcode
+*.xcuserstate
+build/
+DerivedData/
+*.xcscmblueprint
+*.xccheckout
+xcschemes/
+
+# XcodeGen output
+*.xcodeproj
+!project.yml
+
+# Releases
+releases/
+
+# SPM
+.build/
+Package.resolved
+
+# IDEs
+.vscode/
+.idea/
+.claude/
+
+# Env
+.env
+*.env
