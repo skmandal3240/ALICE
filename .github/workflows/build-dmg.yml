@@ -1,0 +1,92 @@
+name: Build ALICE DMG Installer
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build-dmg:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build ALICE (Release, unsigned)
+        run: |
+          xcodebuild build \
+            -scheme ALICE \
+            -configuration Release \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            ENABLE_HARDENED_RUNTIME=NO
+
+      - name: Find built app
+        id: find-app
+        run: |
+          APP_PATH=$(find build/DerivedData -name "ALICE.app" -type d | head -1)
+          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
+          echo "Found: $APP_PATH"
+
+      - name: Create DMG installer
+        run: |
+          mkdir -p build/output
+          create-dmg \
+            --volname "ALICE" \
+            --window-pos 200 120 \
+            --window-size 660 400 \
+            --icon-size 100 \
+            --icon "ALICE.app" 160 195 \
+            --app-drop-link 500 195 \
+            --hide-extension "ALICE.app" \
+            "build/output/ALICE.dmg" \
+            "${{ steps.find-app.outputs.app_path }}"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ALICE-dmg
+          path: build/output/ALICE.dmg
+          retention-days: 90
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/output/ALICE.dmg
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release (manual trigger)
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/output/ALICE.dmg
+          tag_name: "v1.0-${{ github.run_number }}"
+          name: "ALICE v1.0 (Build ${{ github.run_number }})"
+          body: |
+            ## ALICE — macOS AI Companion
+
+            ### Installation
+            1. Download `ALICE.dmg` below
+            2. Double-click to mount
+            3. Drag ALICE to Applications
+            4. Launch from Applications (or Spotlight)
+            5. Grant Accessibility, Screen Recording, and Microphone permissions
+            6. Hold **ctrl + option** to talk to ALICE
+
+            > Built from commit ${{ github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
