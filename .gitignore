@@ -33,4 +33,8 @@ Package.resolved
 # Env
 .env
 *.env
-gateway/node_modules/
+
+# Build artifacts
+*.dmg
+*.ipa
+*.xcarchive
